@@ -1,5 +1,6 @@
 import UIKit
 import MapboxMobileEvents
+@_implementationOnly import MapboxCommon_Private
 
 extension UserDefaults {
     // dynamic var's name has to be the same as corresponding key in UserDefaults
@@ -15,6 +16,12 @@ extension UserDefaults {
 }
 
 internal final class EventsManager {
+    private enum Constants {
+        static let MGLAPIClientUserAgentBase = "mapbox-maps-ios"
+        static let SDKVersion = Bundle.mapboxMapsMetadata.version
+        static let UserAgent = String(format: "%/%", MGLAPIClientUserAgentBase, SDKVersion)
+    }
+
     // use a shared instance to avoid redundant calls to
     // MMEEventsManager.shared().pauseOrResumeMetricsCollectionIfRequired()
     // when the MGLMapboxMetricsEnabled UserDefaults key changes and duplicate
@@ -28,6 +35,7 @@ internal final class EventsManager {
     }
 
     private let mmeEventsManager: MMEEventsManager
+    private let coreTelemetry: EventsService
 
     private let metricsEnabledObservation: NSKeyValueObservation
 
@@ -40,34 +48,37 @@ internal final class EventsManager {
             hostSDKVersion: sdkVersion)
         mmeEventsManager.skuId = "00"
 
+        let eventsServiceOptions = EventsServiceOptions(token: accessToken, userAgentFragment: Constants.MGLAPIClientUserAgentBase, baseURL: nil)
+        coreTelemetry = EventsService(options: eventsServiceOptions)
+
         UserDefaults.standard.register(defaults: [
             #keyPath(UserDefaults.MGLMapboxMetricsEnabled): true
         ])
 
-        metricsEnabledObservation = UserDefaults.standard.observe(\.MGLMapboxMetricsEnabled, options: [.initial, .new]) { [mmeEventsManager] _, change in
+        metricsEnabledObservation = UserDefaults.standard.observe(\.MGLMapboxMetricsEnabled, options: [.initial, .new]) { [mmeEventsManager, coreTelemetry] _, change in
             DispatchQueue.main.async {
                 guard let metricsEnabled = change.newValue else { return }
+
                 UserDefaults.mme_configuration().mme_isCollectionEnabled = metricsEnabled
                 mmeEventsManager.pauseOrResumeMetricsCollectionIfRequired()
+
+                if metricsEnabled {
+                    coreTelemetry.resumeEventsCollection()
+                } else {
+                    coreTelemetry.pauseEventsCollection()
+                }
             }
         }
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(didReceiveMemoryWarning),
-            name: UIApplication.didReceiveMemoryWarningNotification,
-            object: nil)
-    }
-
-    @objc private func didReceiveMemoryWarning() {
-        mmeEventsManager.flush()
     }
 
     internal func sendTurnstile() {
-        mmeEventsManager.sendTurnstileEvent()
+        let turnstileEvent = TurnstileEvent(skuId: UserSKUIdentifier.mapsMAUS, sdkIdentifier: Constants.MGLAPIClientUserAgentBase, sdkVersion: Constants.SDKVersion)
+        coreTelemetry.sendTurnstileEvent(for: turnstileEvent)
     }
 
     internal func sendMapLoadEvent() {
-        mmeEventsManager.enqueueEvent(withName: MMEEventTypeMapLoad)
+        let mapLoadEvent = MapboxCommon_Private.Event(priority: .immediate, attributes: ["event": "mapLoad"])
+
+        coreTelemetry.sendEvent(for: mapLoadEvent)
     }
 }
