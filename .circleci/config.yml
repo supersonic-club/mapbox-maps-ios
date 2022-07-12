@@ -456,7 +456,11 @@ jobs:
               fingerprints:
                   - 3b:cd:47:bf:57:9c:e5:36:b0:4d:5f:12:5e:d3:b3:3e
           - checkout
-          - init-aws
+          - run:
+              command: |
+                  curl -Ls https://mapbox-release-engineering.s3.amazonaws.com/mbx-ci/latest/mbx-ci-linux-amd64 > mbx-ci && chmod 755 ./mbx-ci
+                  ./mbx-ci aws setup
+              name: Install mbx-ci    
           - run:
               command: |
                   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
