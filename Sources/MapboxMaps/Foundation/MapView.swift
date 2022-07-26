@@ -543,7 +543,7 @@ open class MapView: UIView {
             return
         }
 
-        updateHeadingOrientationIfNeeded()
+        // updateHeadingOrientationIfNeeded()
 
         for participant in displayLinkParticipants.allObjects {
             participant.participate()
